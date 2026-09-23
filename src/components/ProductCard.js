@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 /**
  * Mobile-only product cards. Hidden on desktop via Tailwind.
  * Props:
@@ -13,20 +15,26 @@ export default function ProductCard({ products }) {
           className="bg-white rounded-xl border border-gray-200 p-4 flex gap-4"
         >
           {/* Thumbnail */}
-          <img
-            src={product.thumbnail}
-            alt={product.title}
-            className="w-20 h-20 object-contain rounded-lg bg-gray-50 shrink-0"
-            onError={(e) => {
-              e.target.src = "https://placehold.co/80x80?text=?";
-            }}
-          />
+          <Link href={`/products/${product.id}`} className="shrink-0">
+            <img
+              src={product.thumbnail}
+              alt={product.title}
+              className="w-20 h-20 object-contain rounded-lg bg-gray-50 hover:opacity-80 transition-opacity"
+              onError={(e) => {
+                e.target.src = "https://placehold.co/80x80?text=?";
+              }}
+            />
+          </Link>
 
           {/* Details */}
           <div className="flex-1 min-w-0">
-            <p className="font-semibold text-gray-900 text-sm leading-snug line-clamp-2">
+            <Link
+              href={`/products/${product.id}`}
+              className="font-semibold text-gray-900 text-sm leading-snug line-clamp-2 hover:text-indigo-600 transition-colors block"
+            >
               {product.title}
-            </p>
+            </Link>
+
 
             <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 capitalize">
               {product.category}

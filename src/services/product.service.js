@@ -69,3 +69,17 @@ export const getProductsByCategory = async ({
   });
   return response.data;
 };
+
+/**
+ * Fetches a single product by ID.
+ * GET /products/{id}
+ *
+ * @param {string|number} id
+ * @param {{ signal?: AbortSignal }} [options]
+ */
+export const getProductById = async (id, { signal } = {}) => {
+  const response = await api.get(`/products/${encodeURIComponent(id)}`, {
+    signal,
+  });
+  return response.data;
+};

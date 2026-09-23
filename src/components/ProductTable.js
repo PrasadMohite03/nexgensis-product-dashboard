@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 /**
  * Desktop-only product table. Hidden on mobile via Tailwind.
  * Props:
@@ -34,24 +36,32 @@ export default function ProductTable({ products }) {
           {products.map((product) => (
             <tr
               key={product.id}
-              className="hover:bg-gray-50 transition-colors"
+              className="hover:bg-slate-50/80 transition-colors"
             >
               {/* Image */}
               <td className="px-4 py-3">
-                <img
-                  src={product.thumbnail}
-                  alt={product.title}
-                  className="w-12 h-12 object-contain rounded-lg bg-gray-50"
-                  onError={(e) => {
-                    e.target.src = "https://placehold.co/48x48?text=?";
-                  }}
-                />
+                <Link href={`/products/${product.id}`} className="block w-12 h-12">
+                  <img
+                    src={product.thumbnail}
+                    alt={product.title}
+                    className="w-12 h-12 object-contain rounded-lg bg-gray-50 hover:opacity-80 transition-opacity"
+                    onError={(e) => {
+                      e.target.src = "https://placehold.co/48x48?text=?";
+                    }}
+                  />
+                </Link>
               </td>
 
               {/* Title */}
               <td className="px-4 py-3 font-medium text-gray-900 max-w-xs">
-                <p className="truncate">{product.title}</p>
+                <Link
+                  href={`/products/${product.id}`}
+                  className="hover:text-indigo-600 hover:underline transition-colors block truncate"
+                >
+                  {product.title}
+                </Link>
               </td>
+
 
               {/* Category */}
               <td className="px-4 py-3">

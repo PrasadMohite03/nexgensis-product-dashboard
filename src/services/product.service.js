@@ -83,3 +83,37 @@ export const getProductById = async (id, { signal } = {}) => {
   });
   return response.data;
 };
+
+/**
+ * Creates a new product.
+ * POST /products/add
+ *
+ * @param {object} productData
+ */
+export const createProduct = async (productData) => {
+  const response = await api.post("/products/add", productData);
+  return response.data;
+};
+
+/**
+ * Updates an existing product by ID.
+ * PUT /products/{id}
+ *
+ * @param {string|number} id
+ * @param {object} productData
+ */
+export const updateProduct = async (id, productData) => {
+  const response = await api.put(`/products/${encodeURIComponent(id)}`, productData);
+  return response.data;
+};
+
+/**
+ * Deletes a product by ID.
+ * DELETE /products/{id}
+ *
+ * @param {string|number} id
+ */
+export const deleteProduct = async (id) => {
+  const response = await api.delete(`/products/${encodeURIComponent(id)}`);
+  return response.data;
+};

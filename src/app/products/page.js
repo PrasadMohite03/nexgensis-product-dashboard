@@ -16,7 +16,11 @@ import Pagination from "@/components/Pagination";
 // ─────────────────────────────────────────────────────────────────────────────
 import { parseSortBy, parseOrder, parseCategory } from "@/utils/filter.utils";
 import { useCategories } from "@/hooks/useCategories";
+import { useProductMutations } from "@/hooks/useProductMutations";
+import { useProductMutationContext } from "@/context/ProductMutationContext";
 import FilterBar from "@/components/FilterBar";
+import ProductFormModal from "@/components/ProductFormModal";
+import DeleteConfirmModal from "@/components/DeleteConfirmModal";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: builds a /products URL string from the current nav state.
@@ -49,6 +53,32 @@ function ProductsContent({ user, onLogout }) {
 
   // ── Fetch category list once ────────────────────────────────────────────────
   const { categories, loading: categoriesLoading } = useCategories();
+
+  // ── Mutations hook ──────────────────────────────────────────────────────────
+  const {
+    submitting,
+    error: mutationError,
+    setError: setMutationError,
+    createProduct: apiCreateProduct,
+    updateProduct: apiUpdateProduct,
+    deleteProduct: apiDeleteProduct,
+  } = useProductMutations();
+
+  // ── Shared mutation overlay (via context — also consumed by /products/[id]) ──
+  const {
+    createdProducts,
+    updatedProductsMap,
+    deletedProductIds,
+    addCreatedProduct,
+    addUpdatedProduct,
+    addDeletedProduct,
+  } = useProductMutationContext();
+
+  // Modal dialog states
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [deletingProduct, setDeletingProduct] = useState(null);
 
   // ── Phase 1: Parse + normalise URL params ──────────────────────────────────
   const page = parsePage(searchParams.get("page"));
@@ -85,7 +115,7 @@ function ProductsContent({ user, onLogout }) {
   }, [debouncedSearch]);
 
   // ── Data fetching ───────────────────────────────────────────────────────────
-  const { products, total, loading, error, retry } = useProducts({
+  const { products: fetchedProducts, total: fetchedTotal, loading, error, retry } = useProducts({
     page,
     limit,
     search,
@@ -93,6 +123,92 @@ function ProductsContent({ user, onLogout }) {
     sortBy,
     order,
   });
+
+  // ── Compute visible products with mutation overlays ──────────────────────────
+  // Rules:
+  //   1. Created/edited products are filtered by the active category and search.
+  //   2. Updated products that no longer match the active filter are removed.
+  //   3. Created products only appear on page 1 (server has no awareness of them).
+  //   4. Combined list is re-sorted by the active sortBy/order.
+  //   5. Total count is computed from filter-eligible items only.
+  const { displayProducts, total } = (() => {
+    const trimmedSearch   = (search   ?? "").trim().toLowerCase();
+    const trimmedCategory = (category ?? "").trim().toLowerCase();
+
+    /** Returns true if the product passes the active category + search filters. */
+    function matchesFilters(p) {
+      if (trimmedCategory) {
+        if ((p.category ?? "").trim().toLowerCase() !== trimmedCategory) return false;
+      }
+      if (trimmedSearch) {
+        const inTitle = (p.title       ?? "").toLowerCase().includes(trimmedSearch);
+        const inDesc  = (p.description ?? "").toLowerCase().includes(trimmedSearch);
+        if (!inTitle && !inDesc) return false;
+      }
+      return true;
+    }
+
+    /** Returns a new sorted array by sortBy/order (does not mutate). */
+    function sortItems(arr) {
+      if (!sortBy) return arr;
+      return [...arr].sort((a, b) => {
+        let av = a[sortBy] ?? "";
+        let bv = b[sortBy] ?? "";
+        if (typeof av === "string") av = av.toLowerCase();
+        if (typeof bv === "string") bv = bv.toLowerCase();
+        if (av < bv) return order === "desc" ? 1 : -1;
+        if (av > bv) return order === "desc" ? -1 : 1;
+        return 0;
+      });
+    }
+
+    // Track which IDs are local-only (not server-fetched) for total calculation.
+    const createdIds = new Set(createdProducts.map((p) => p.id));
+
+    // 1. Server-fetched products: apply edits, remove deleted, remove if edit
+    //    moved them outside the active filter (e.g. category changed to other).
+    const mergedFetched = (fetchedProducts ?? [])
+      .filter((p) => !deletedProductIds.has(p.id))
+      .map((p) => (updatedProductsMap[p.id] ? { ...p, ...updatedProductsMap[p.id] } : p))
+      .filter(matchesFilters);
+
+    // 2. Locally-created products: apply any subsequent edits, remove deleted,
+    //    filter by active category/search.
+    const eligibleCreated = createdProducts
+      .filter((p) => !deletedProductIds.has(p.id))
+      .map((p) => (updatedProductsMap[p.id] ? { ...p, ...updatedProductsMap[p.id] } : p))
+      .filter(matchesFilters);
+
+    // 3. Only show created products on page 1 — they are virtual and have no
+    //    server-assigned position in deeper pages.
+    const visibleCreated = page === 1 ? eligibleCreated : [];
+
+    // 4. Combine and re-sort the current page's visible set.
+    const dp = sortItems([...visibleCreated, ...mergedFetched]);
+
+    // 5. Adjusted total:
+    //    - fetchedTotal already reflects the active search/category from the server.
+    //    - Add filter-eligible created products (server is unaware of them).
+    //    - Subtract deleted products that came from the server (not local creates).
+    //    - Subtract server-fetched products whose local edit moved them OUT of the
+    //      active filter (they were counted by the server but are now hidden).
+    const deletedFromFetchedCount = [...deletedProductIds].filter(
+      (id) => !createdIds.has(id)
+    ).length;
+
+    const editedOutOfFilterCount = (fetchedProducts ?? [])
+      .filter((p) => !deletedProductIds.has(p.id) && updatedProductsMap[p.id])
+      .map((p) => ({ ...p, ...updatedProductsMap[p.id] }))
+      .filter((p) => !matchesFilters(p)).length;
+
+    const t =
+      fetchedTotal +
+      eligibleCreated.length -
+      deletedFromFetchedCount -
+      editedOutOfFilterCount;
+
+    return { displayProducts: dp, total: t };
+  })();
 
   // ── Phase 2: Out-of-range page correction ──────────────────────────────────
   const hasCorrected = useRef(false);
@@ -163,17 +279,115 @@ function ProductsContent({ user, onLogout }) {
     );
   }
 
+  // ── CRUD Handlers ───────────────────────────────────────────────────────────
+  function handleOpenAdd() {
+    setEditingProduct(null);
+    setMutationError(null);
+    setIsFormOpen(true);
+  }
+
+  function handleOpenEdit(product) {
+    setEditingProduct(product);
+    setMutationError(null);
+    setIsFormOpen(true);
+  }
+
+  function handleOpenDelete(product) {
+    setDeletingProduct(product);
+    setMutationError(null);
+    setIsDeleteOpen(true);
+  }
+
+  async function handleFormSubmit(payload) {
+    if (editingProduct) {
+      // EDIT MODE
+      // Check whether this is a locally-created product (exists only in context).
+      // If so, skip the DummyJSON PUT — it has no record of this ID.
+      const isLocalProduct = createdProducts.some(
+        (p) => String(p.id) === String(editingProduct.id)
+      );
+
+      if (isLocalProduct) {
+        // Write directly to context — no API call.
+        addUpdatedProduct(editingProduct.id, { ...editingProduct, ...payload });
+        setIsFormOpen(false);
+        return;
+      }
+
+      // Existing API product: call DummyJSON PUT, then persist overlay.
+      const res = await apiUpdateProduct(editingProduct.id, payload);
+      if (res) {
+        addUpdatedProduct(editingProduct.id, { ...editingProduct, ...payload, ...res });
+        setIsFormOpen(false);
+      }
+    } else {
+      // ADD MODE
+      const res = await apiCreateProduct(payload);
+      if (res) {
+        const newProd = {
+          id: res.id || Date.now(),
+          thumbnail: "https://placehold.co/150x150?text=New+Product",
+          images: ["https://placehold.co/600x600?text=New+Product"],
+          rating: 0,
+          reviews: [],
+          ...payload,
+          ...res,
+        };
+        // Persist into shared context so /products/[id] can render it
+        addCreatedProduct(newProd);
+        setIsFormOpen(false);
+      }
+    }
+  }
+
+  async function handleDeleteConfirm() {
+    if (!deletingProduct) return;
+
+    // Check whether this is a locally-created product (exists only in context).
+    // If so, skip the DummyJSON DELETE — it has no record of this ID.
+    const isLocalProduct = createdProducts.some(
+      (p) => String(p.id) === String(deletingProduct.id)
+    );
+
+    if (isLocalProduct) {
+      // Write directly to context — no API call.
+      addDeletedProduct(deletingProduct.id);
+      setIsDeleteOpen(false);
+      return;
+    }
+
+    // Existing API product: call DummyJSON DELETE, then persist overlay.
+    const res = await apiDeleteProduct(deletingProduct.id);
+    if (res) {
+      addDeletedProduct(deletingProduct.id);
+      setIsDeleteOpen(false);
+    }
+  }
+
   return (
     <>
       <Navbar user={user} onLogout={onLogout} />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-        {/* Page heading */}
-        <div className="mb-5">
-          <h1 className="text-xl font-bold text-gray-900">Products</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Browse and filter the full product catalogue
-          </p>
+        {/* Page heading & Add Product Action */}
+        <div className="mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">Products</h1>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Browse, filter, and manage your product catalogue
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleOpenAdd}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-sm transition-all hover:shadow focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 shrink-0"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Add Product
+          </button>
         </div>
 
         {/* ── Filter Bar (Search + Category + Sort) ── */}
@@ -269,7 +483,7 @@ function ProductsContent({ user, onLogout }) {
         )}
 
         {/* ── Empty state ── */}
-        {!loading && !error && products.length === 0 && (
+        {!loading && !error && displayProducts.length === 0 && (
           <div className="flex flex-col items-center justify-center py-32 gap-3">
             <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center">
               <svg
@@ -297,10 +511,18 @@ function ProductsContent({ user, onLogout }) {
         )}
 
         {/* ── Product list ── */}
-        {!loading && !error && products.length > 0 && (
+        {!loading && !error && displayProducts.length > 0 && (
           <>
-            <ProductTable products={products} />
-            <ProductCard products={products} />
+            <ProductTable
+              products={displayProducts}
+              onEdit={handleOpenEdit}
+              onDelete={handleOpenDelete}
+            />
+            <ProductCard
+              products={displayProducts}
+              onEdit={handleOpenEdit}
+              onDelete={handleOpenDelete}
+            />
             <div className="mt-4 bg-white rounded-xl border border-gray-200 px-4">
               <Pagination
                 currentPage={page}
@@ -314,9 +536,31 @@ function ProductsContent({ user, onLogout }) {
           </>
         )}
       </div>
+
+      {/* ── Add/Edit Product Modal ────────────────────────────────────── */}
+      <ProductFormModal
+        isOpen={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        onSubmit={handleFormSubmit}
+        initialData={editingProduct}
+        categories={categories}
+        submitting={submitting}
+        apiError={mutationError}
+      />
+
+      {/* ── Delete Confirmation Modal ──────────────────────────────────── */}
+      <DeleteConfirmModal
+        isOpen={isDeleteOpen}
+        onClose={() => setIsDeleteOpen(false)}
+        onConfirm={handleDeleteConfirm}
+        productTitle={deletingProduct?.title}
+        submitting={submitting}
+        apiError={mutationError}
+      />
     </>
   );
 }
+
 
 
 // ─────────────────────────────────────────────────────────────────────────────

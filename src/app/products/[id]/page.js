@@ -6,20 +6,51 @@ import Link from "next/link";
 
 import { isAuthenticated, getUser, clearAuth } from "@/utils/auth.utils";
 import { useProduct } from "@/hooks/useProduct";
-
+import { useCategories } from "@/hooks/useCategories";
+import { useProductMutations } from "@/hooks/useProductMutations";
+import { useProductMutationContext } from "@/context/ProductMutationContext";
 import Navbar from "@/components/Navbar";
 import ProductGallery from "@/components/ProductGallery";
 import ProductSkeleton from "@/components/ProductSkeleton";
 import ProductReviews from "@/components/ProductReviews";
+import ProductFormModal from "@/components/ProductFormModal";
+import DeleteConfirmModal from "@/components/DeleteConfirmModal";
 
 export default function ProductDetailPage() {
   const router = useRouter();
   const params = useParams();
-  const id = params?.id;
+  const rawId = params?.id;
+  // DummyJSON IDs are numeric; locally-created ones may be numeric strings
+  // from Date.now(). Normalize to a string for map/set lookups.
+  const id = rawId != null ? String(rawId) : null;
 
   const [user, setUser] = useState(null);
 
-  // Auth protection check
+  // Modals state
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+
+  const { categories } = useCategories();
+  const {
+    submitting,
+    error: mutationError,
+    setError: setMutationError,
+    updateProduct: apiUpdateProduct,
+    deleteProduct: apiDeleteProduct,
+  } = useProductMutations();
+
+  // ── Shared mutation overlay ─────────────────────────────────────────────────
+  // This is the same state that /products reads, so edits/deletes made on the
+  // list page are immediately visible here, and vice versa.
+  const {
+    createdProducts,
+    updatedProductsMap,
+    deletedProductIds,
+    addUpdatedProduct,
+    addDeletedProduct,
+  } = useProductMutationContext();
+
+  // Auth protection
   useEffect(() => {
     if (!isAuthenticated()) {
       router.replace("/login");
@@ -33,7 +64,82 @@ export default function ProductDetailPage() {
     router.push("/login");
   }
 
-  const { product, loading, error, isNotFound, retry } = useProduct(id);
+  // ── Resolve the product from context or API ─────────────────────────────────
+  // Step 1: Check if this is a locally-created product.
+  //         IDs in createdProducts may be numbers (from res.id) or Date.now()
+  //         strings; compare as strings for safety.
+  const locallyCreated = createdProducts.find(
+    (p) => String(p.id) === id
+  ) ?? null;
+
+  // Step 2: If it's locally created, skip the API call entirely.
+  //         If it's an API product, fetch it normally.
+  const shouldFetchFromApi = !locallyCreated;
+
+  const {
+    product: fetchedProduct,
+    loading: fetchLoading,
+    error: fetchError,
+    isNotFound: fetchIsNotFound,
+    retry,
+  } = useProduct(shouldFetchFromApi ? id : null);
+
+  // ── Derive the displayed product ────────────────────────────────────────────
+  // Priority: locallyCreated base → merged with any local update
+  //           API product base   → merged with any local update
+  const baseProduct = locallyCreated ?? fetchedProduct;
+  const localUpdate = id ? updatedProductsMap[id] ?? updatedProductsMap[Number(id)] : null;
+  const product = baseProduct
+    ? localUpdate
+      ? { ...baseProduct, ...localUpdate }
+      : baseProduct
+    : null;
+
+  // ── Derived loading / error / not-found states ──────────────────────────────
+  // For locally-created products: never loading, never a fetch error.
+  const loading  = locallyCreated ? false : fetchLoading;
+  const error    = locallyCreated ? null  : fetchError;
+  const isNotFound =
+    deletedProductIds.has(id) ||
+    deletedProductIds.has(Number(id)) ||
+    (locallyCreated ? false : fetchIsNotFound);
+
+  // ── Handlers ────────────────────────────────────────────────────────────────
+  async function handleEditSubmit(payload) {
+    if (locallyCreated) {
+      // Locally-created product exists only in context — DummyJSON has no
+      // record of it, so skip the API entirely and update the context directly.
+      addUpdatedProduct(id, { ...product, ...payload });
+      setIsEditOpen(false);
+      return;
+    }
+
+    // Existing API product: call DummyJSON PUT, then persist to context.
+    const res = await apiUpdateProduct(id, payload);
+    if (res) {
+      addUpdatedProduct(id, { ...product, ...payload, ...res });
+      setIsEditOpen(false);
+    }
+  }
+
+  async function handleDeleteConfirm() {
+    if (locallyCreated) {
+      // Locally-created product exists only in context — skip the API and
+      // mark it deleted directly in context so it disappears from both pages.
+      addDeletedProduct(id);
+      setIsDeleteOpen(false);
+      router.push("/products");
+      return;
+    }
+
+    // Existing API product: call DummyJSON DELETE, then record in context.
+    const res = await apiDeleteProduct(id);
+    if (res) {
+      addDeletedProduct(id);
+      setIsDeleteOpen(false);
+      router.push("/products");
+    }
+  }
 
   if (!user) {
     return (
@@ -48,8 +154,8 @@ export default function ProductDetailPage() {
       <Navbar user={user} onLogout={handleLogout} />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        {/* ── Top Navigation Bar ─────────────────────────────────────────── */}
-        <div className="mb-6">
+        {/* ── Top Navigation & Actions Bar ───────────────────────────────── */}
+        <div className="mb-6 flex items-center justify-between gap-4">
           <Link
             href="/products"
             className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors group"
@@ -69,12 +175,45 @@ export default function ProductDetailPage() {
             </svg>
             Back to Products
           </Link>
+
+          {!loading && !isNotFound && !error && product && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setMutationError(null);
+                  setIsEditOpen(true);
+                }}
+                className="px-3.5 py-1.5 text-xs sm:text-sm font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 shadow-sm transition-all flex items-center gap-1.5"
+              >
+                <svg className="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                Edit
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMutationError(null);
+                  setIsDeleteOpen(true);
+                }}
+                className="px-3.5 py-1.5 text-xs sm:text-sm font-semibold text-red-600 bg-white border border-red-200 rounded-xl hover:bg-red-50 shadow-sm transition-all flex items-center gap-1.5"
+              >
+                <svg className="w-3.5 h-3.5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Delete
+              </button>
+            </div>
+          )}
         </div>
+
 
         {/* ── Loading Skeleton ───────────────────────────────────────────── */}
         {loading && <ProductSkeleton />}
 
-        {/* ── 404 / Product Not Found State ───────────────────────────────── */}
+        {/* ── Locally deleted / 404 / Product Not Found ────────────────────── */}
         {!loading && isNotFound && (
           <div className="bg-white rounded-2xl border border-slate-200 p-8 sm:p-12 text-center max-w-lg mx-auto shadow-sm my-12">
             <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -96,7 +235,7 @@ export default function ProductDetailPage() {
               Product Not Found
             </h2>
             <p className="text-slate-500 text-sm mb-6">
-              The product you are looking for (ID: #{id}) does not exist or has been removed.
+              The product you are looking for (ID: #{rawId}) does not exist or has been removed.
             </p>
             <Link
               href="/products"
@@ -176,7 +315,7 @@ export default function ProductDetailPage() {
                   <div className="flex items-center text-amber-400">
                     <span className="text-base">★</span>
                     <span className="font-bold text-slate-900 ml-1">
-                      {product.rating?.toFixed(1)}
+                      {product.rating?.toFixed(1) ?? "—"}
                     </span>
                   </div>
                   <span className="text-slate-400">•</span>
@@ -234,9 +373,31 @@ export default function ProductDetailPage() {
           </div>
         )}
       </div>
+
+      {/* ── Edit Product Modal ────────────────────────────────────── */}
+      <ProductFormModal
+        isOpen={isEditOpen}
+        onClose={() => setIsEditOpen(false)}
+        onSubmit={handleEditSubmit}
+        initialData={product}
+        categories={categories}
+        submitting={submitting}
+        apiError={mutationError}
+      />
+
+      {/* ── Delete Confirmation Modal ──────────────────────────────────── */}
+      <DeleteConfirmModal
+        isOpen={isDeleteOpen}
+        onClose={() => setIsDeleteOpen(false)}
+        onConfirm={handleDeleteConfirm}
+        productTitle={product?.title}
+        submitting={submitting}
+        apiError={mutationError}
+      />
     </main>
   );
 }
+
 
 
 function DetailStockBadge({ stock }) {

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { isAuthenticated, getUser, clearAuth } from "@/utils/auth.utils";
 import { parsePage, parseLimit, getTotalPages } from "@/utils/pagination.utils";
 import { useProducts } from "@/hooks/useProducts";
+import { useDebounce } from "@/hooks/useDebounce";
 
 import Navbar from "@/components/Navbar";
 import ProductTable from "@/components/ProductTable";
@@ -13,8 +14,19 @@ import ProductCard from "@/components/ProductCard";
 import Pagination from "@/components/Pagination";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Inner component that uses useSearchParams.
-// Must be wrapped in <Suspense> so Next.js can statically render the shell.
+// Helper: builds a /products URL string from the current nav state.
+// Omits `search` when empty so the URL stays clean.
+// ─────────────────────────────────────────────────────────────────────────────
+function buildUrl({ page, limit, search }) {
+  const params = new URLSearchParams();
+  params.set("page", String(page));
+  params.set("limit", String(limit));
+  if (search) params.set("search", search);
+  return `/products?${params.toString()}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Inner component — uses useSearchParams, so must be inside <Suspense>.
 // ─────────────────────────────────────────────────────────────────────────────
 function ProductsContent({ user, onLogout }) {
   const router = useRouter();
@@ -23,38 +35,72 @@ function ProductsContent({ user, onLogout }) {
   // ── Phase 1: Parse + normalise URL params (synchronous, before any fetch) ──
   const page = parsePage(searchParams.get("page"));
   const limit = parseLimit(searchParams.get("limit"));
+  const search = searchParams.get("search") ?? ""; // raw string, "" means no search
+
+  // ── Search input state ──────────────────────────────────────────────────────
+  // `inputValue` is what the user sees in the text box (updates on every keystroke).
+  // `debouncedSearch` lags 400ms behind — this is what gets written to the URL.
+  const [inputValue, setInputValue] = useState(search);
+  const debouncedSearch = useDebounce(inputValue, 400);
+
+  // Keep the input box in sync when the URL changes externally
+  // (e.g. browser back/forward, or the page reloads with ?search=phone).
+  useEffect(() => {
+    setInputValue(search);
+  }, [search]);
+
+  // When the debounced value settles and differs from the current URL param,
+  // push a new URL. Always reset to page 1 on a new search.
+  useEffect(() => {
+    if (debouncedSearch === search) return; // already in sync — nothing to do
+    router.push(buildUrl({ page: 1, limit, search: debouncedSearch }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);
+  // ↑ Intentionally omitting `search`, `limit`, `page`, `router` from deps.
+  //   This effect should ONLY fire when the debounced value changes — not when
+  //   the URL updates as a result of it (which would cause a loop).
 
   // ── Data fetching ───────────────────────────────────────────────────────────
-  const { products, total, loading, error, retry } = useProducts({ page, limit });
+  // useProducts handles AbortController + stale-flag race protection internally.
+  const { products, total, loading, error, retry } = useProducts({
+    page,
+    limit,
+    search,
+  });
 
   // ── Phase 2: Out-of-range page correction (post-fetch, fires once) ──────────
   const hasCorrected = useRef(false);
 
   useEffect(() => {
     if (loading || !total || hasCorrected.current) return;
-
     const maxPage = getTotalPages(total, limit);
     if (page > maxPage) {
       hasCorrected.current = true;
-      router.replace(`/products?page=${maxPage}&limit=${limit}`);
+      router.replace(buildUrl({ page: maxPage, limit, search }));
     }
-  }, [loading, total, page, limit, router]);
+  }, [loading, total, page, limit, search, router]);
 
-  // Reset correction lock on each new navigation so it can re-check next time.
   useEffect(() => {
     hasCorrected.current = false;
-  }, [page, limit]);
+  }, [page, limit, search]);
 
   // ── Derived values ──────────────────────────────────────────────────────────
   const totalPages = getTotalPages(total, limit);
 
-  // ── Navigation handlers ─────────────────────────────────────────────────────
+  // ── Navigation handlers — preserve search param ─────────────────────────────
   function handlePageChange(newPage) {
-    router.push(`/products?page=${newPage}&limit=${limit}`);
+    router.push(buildUrl({ page: newPage, limit, search }));
   }
 
   function handleLimitChange(newLimit) {
-    router.push(`/products?page=1&limit=${newLimit}`);
+    router.push(buildUrl({ page: 1, limit: newLimit, search }));
+  }
+
+  // ── Clear search ─────────────────────────────────────────────────────────────
+  function handleClearSearch() {
+    setInputValue("");
+    // Navigate immediately without waiting for debounce.
+    router.push(buildUrl({ page: 1, limit, search: "" }));
   }
 
   return (
@@ -68,6 +114,57 @@ function ProductsContent({ user, onLogout }) {
           <p className="text-sm text-gray-500 mt-0.5">
             Browse the full product catalogue
           </p>
+        </div>
+
+        {/* ── Search input ── */}
+        <div className="mb-4">
+          <div className="relative max-w-sm">
+            {/* Search icon */}
+            <svg
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"
+              />
+            </svg>
+
+            <input
+              id="search-input"
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder="Search products…"
+              className="w-full pl-9 pr-9 py-2 rounded-lg border border-gray-300 text-sm text-gray-900 placeholder-gray-400 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+            />
+
+            {/* Clear button — only shown when input has content */}
+            {inputValue && (
+              <button
+                id="search-clear-btn"
+                onClick={handleClearSearch}
+                aria-label="Clear search"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          {/* Active search label */}
+          {search && (
+            <p className="mt-2 text-sm text-gray-500">
+              Results for{" "}
+              <span className="font-medium text-indigo-600">&ldquo;{search}&rdquo;</span>
+            </p>
+          )}
         </div>
 
         {/* ── Loading state ── */}
@@ -148,7 +245,11 @@ function ProductsContent({ user, onLogout }) {
                 />
               </svg>
             </div>
-            <p className="text-sm text-gray-500">No products found.</p>
+            <p className="text-sm text-gray-500">
+              {search
+                ? `No products found for "${search}".`
+                : "No products found."}
+            </p>
           </div>
         )}
 
@@ -180,8 +281,8 @@ function ProductsContent({ user, onLogout }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Page component — owns auth state and wraps content in Suspense.
-// Suspense is required by Next.js whenever useSearchParams is used in a
+// Page component — owns auth state and wraps ProductsContent in <Suspense>.
+// Required by Next.js App Router when useSearchParams() is used in a
 // "use client" component during static generation.
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ProductsPage() {
@@ -211,11 +312,6 @@ export default function ProductsPage() {
 
   return (
     <main className="min-h-screen bg-gray-50">
-      {/*
-        Suspense boundary required by Next.js App Router for any component
-        that calls useSearchParams(). The fallback renders while React
-        resolves the client-side search params on first paint.
-      */}
       <Suspense
         fallback={
           <div className="min-h-screen flex items-center justify-center bg-gray-50">

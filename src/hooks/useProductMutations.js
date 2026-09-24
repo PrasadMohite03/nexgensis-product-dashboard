@@ -20,7 +20,12 @@ export function useProductMutations() {
       const res = await apiCreateProduct(productData);
       return res;
     } catch (err) {
-      const msg = err?.response?.data?.message || "Failed to add product.";
+      const is413 = err?.response?.status === 413;
+      const msg =
+        err?.response?.data?.message ||
+        (is413
+          ? "Request payload too large (413). Please select a smaller image or use an image URL."
+          : "Failed to add product.");
       setError(msg);
       throw new Error(msg);
     } finally {
@@ -36,7 +41,12 @@ export function useProductMutations() {
       const res = await apiUpdateProduct(id, productData);
       return res;
     } catch (err) {
-      const msg = err?.response?.data?.message || "Failed to update product.";
+      const is413 = err?.response?.status === 413;
+      const msg =
+        err?.response?.data?.message ||
+        (is413
+          ? "Request payload too large (413). Please select a smaller image or use an image URL."
+          : "Failed to update product.");
       setError(msg);
       throw new Error(msg);
     } finally {

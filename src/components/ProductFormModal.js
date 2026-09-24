@@ -40,6 +40,8 @@ export default function ProductFormModal({
   const dropdownRef = useRef(null);
   const searchInputRef = useRef(null);
 
+  const [compressing, setCompressing] = useState(false);
+
   // Pre-fill form when modal opens or initialData changes
   useEffect(() => {
     if (isOpen) {
@@ -48,7 +50,7 @@ export default function ProductFormModal({
         setFormData({
           title: initialData.title || "",
           thumbnail: initialData.thumbnail || "",
-          fileName: isBase64 ? "uploaded-image.png" : "",
+          fileName: isBase64 ? "uploaded-image.jpg" : "",
           description: initialData.description || "",
           category: initialData.category || "",
           price: initialData.price !== undefined ? String(initialData.price) : "",
@@ -70,6 +72,7 @@ export default function ProductFormModal({
         });
       }
       setErrors({});
+      setCompressing(false);
       setIsDropdownOpen(false);
       setSearchQuery("");
       setHighlightedIndex(-1);
@@ -151,13 +154,23 @@ export default function ProductFormModal({
       }
     }
 
+    if (compressing) {
+      newErrors.thumbnail = "Image is still being processed. Please wait...";
+    } else if (
+      formData.thumbnail &&
+      formData.thumbnail.startsWith("data:") &&
+      formData.thumbnail.length > 270000
+    ) {
+      newErrors.thumbnail = "Compressed image payload is too large (> 200 KB). Please select a smaller file or use a URL.";
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   }
 
   function handleSubmit(e) {
     e.preventDefault();
-    if (!validate() || submitting) return;
+    if (!validate() || submitting || compressing) return;
 
     const payload = {
       title: formData.title.trim(),
@@ -228,25 +241,94 @@ export default function ProductFormModal({
     }
   }
 
-  function handleFileChange(e) {
+  /**
+   * Resizes and compresses an image file using an offscreen Canvas element.
+   * Converts PNG/JPEG/WebP to a lightweight JPEG Data URL under ~150 KB.
+   */
+  function compressImageFile(file, maxDimension = 800, quality = 0.8) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onerror = () => reject(new Error("Invalid image format"));
+        img.onload = () => {
+          let { width, height } = img;
+          if (width > maxDimension || height > maxDimension) {
+            if (width > height) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
+            } else {
+              width = Math.round((width * maxDimension) / height);
+              height = maxDimension;
+            }
+          }
+
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#FFFFFF";
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const dataUrl = canvas.toDataURL("image/jpeg", quality);
+          resolve(dataUrl);
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleFileChange(e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target && event.target.result) {
+    setCompressing(true);
+    if (errors.thumbnail) {
+      setErrors((prev) => ({ ...prev, thumbnail: null }));
+    }
+
+    try {
+      // Primary compression at max 800px & 0.8 quality
+      let compressedDataUrl = await compressImageFile(file, 800, 0.8);
+
+      // Secondary tighter compression if base64 string length > 200 KB
+      if (compressedDataUrl.length > 220000) {
+        compressedDataUrl = await compressImageFile(file, 600, 0.65);
+      }
+
+      if (compressedDataUrl.length > 270000) {
+        setErrors((prev) => ({
+          ...prev,
+          thumbnail: "Image payload is too large (> 200 KB). Please choose a smaller file or use a URL.",
+        }));
+        setFormData((prev) => ({ ...prev, thumbnail: "", fileName: "" }));
+      } else {
         setFormData((prev) => ({
           ...prev,
-          thumbnail: event.target.result,
+          thumbnail: compressedDataUrl,
           fileName: file.name,
         }));
-        if (errors.thumbnail) {
-          setErrors((prev) => ({ ...prev, thumbnail: null }));
-        }
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      setErrors((prev) => ({
+        ...prev,
+        thumbnail: "Failed to process image. Please select a valid image file.",
+      }));
+    } finally {
+      setCompressing(false);
+      e.target.value = "";
+    }
   }
+
+  // Calculate size in KB for base64 thumbnails
+  const imageSizeKb =
+    formData.thumbnail && formData.thumbnail.startsWith("data:")
+      ? Math.round((formData.thumbnail.length * 0.75) / 1024)
+      : null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
@@ -259,7 +341,7 @@ export default function ProductFormModal({
           <button
             type="button"
             onClick={onClose}
-            disabled={submitting}
+            disabled={submitting || compressing}
             className="text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-lg hover:bg-slate-200/50"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -286,7 +368,7 @@ export default function ProductFormModal({
               value={formData.title}
               onChange={(e) => handleChange("title", e.target.value)}
               placeholder="e.g. Wireless Headphones"
-              disabled={submitting}
+              disabled={submitting || compressing}
               className={`w-full px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 bg-slate-50 border rounded-xl outline-none transition-all ${
                 errors.title ? "border-red-500 ring-1 ring-red-200" : "border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
               }`}
@@ -301,16 +383,23 @@ export default function ProductFormModal({
             </label>
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
-                <label className="cursor-pointer inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-xl transition-colors">
-                  <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
-                  {formData.fileName ? "Change Image" : "Upload from Device"}
+                <label className={`cursor-pointer inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-xl transition-colors ${compressing ? "opacity-60 cursor-not-allowed" : ""}`}>
+                  {compressing ? (
+                    <svg className="w-4 h-4 text-indigo-600 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                  )}
+                  {compressing ? "Optimizing..." : formData.fileName ? "Change Image" : "Upload from Device"}
                   <input
                     type="file"
                     accept="image/*"
                     onChange={handleFileChange}
-                    disabled={submitting}
+                    disabled={submitting || compressing}
                     className="hidden"
                   />
                 </label>
@@ -322,10 +411,14 @@ export default function ProductFormModal({
                   value={formData.fileName ? "" : formData.thumbnail}
                   onChange={(e) => handleUrlChange(e.target.value)}
                   placeholder="Paste image URL..."
-                  disabled={submitting}
+                  disabled={submitting || compressing}
                   className="flex-1 min-w-[160px] px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all"
                 />
               </div>
+
+              {errors.thumbnail && (
+                <p className="text-xs text-red-600 font-medium">{errors.thumbnail}</p>
+              )}
 
               {/* Live Preview & File Info Badge */}
               {formData.thumbnail && (
@@ -343,7 +436,9 @@ export default function ProductFormModal({
                       {formData.fileName || "Image Preview"}
                     </p>
                     <p className="text-[11px] text-slate-400">
-                      {formData.fileName ? "Uploaded from device" : "Linked via URL"}
+                      {formData.fileName
+                        ? `Optimized (${imageSizeKb || "< 150"} KB)`
+                        : "Linked via URL"}
                     </p>
                   </div>
                   <button
@@ -585,7 +680,7 @@ export default function ProductFormModal({
 
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || compressing}
               className="px-5 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center gap-2"
             >
               {submitting && (

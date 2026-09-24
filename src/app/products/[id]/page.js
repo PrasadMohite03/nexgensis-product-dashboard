@@ -150,43 +150,50 @@ export default function ProductDetailPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 pb-16">
+    <main className="min-h-screen bg-[#F8FAFC] pb-16">
       <Navbar user={user} onLogout={handleLogout} />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        {/* ── Top Navigation & Actions Bar ───────────────────────────────── */}
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <Link
-            href="/products"
-            className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors group"
-          >
-            <svg
-              className="w-4 h-4 transition-transform group-hover:-translate-x-1"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+        {/* ── Breadcrumb + Actions Bar ──────────────────────────────────── */}
+        <div className="mb-6 flex items-center justify-between gap-4 flex-wrap">
+          {/* Breadcrumb */}
+          <nav className="flex items-center gap-1.5 text-sm" aria-label="Breadcrumb">
+            <Link
+              href="/products"
+              className="text-slate-500 hover:text-indigo-600 transition-colors font-medium"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M10 19l-7-7m0 0l7-7m-7 7h18"
-              />
-            </svg>
-            Back to Products
-          </Link>
+              Products
+            </Link>
+            {product?.category && (
+              <>
+                <span className="text-slate-300">/</span>
+                <Link
+                  href={`/products?category=${encodeURIComponent(product.category)}`}
+                  className="text-slate-500 hover:text-indigo-600 transition-colors font-medium capitalize"
+                >
+                  {product.category}
+                </Link>
+              </>
+            )}
+            {product?.title && (
+              <>
+                <span className="text-slate-300">/</span>
+                <span className="text-slate-900 font-medium truncate max-w-[180px] sm:max-w-xs">
+                  {product.title}
+                </span>
+              </>
+            )}
+          </nav>
 
+          {/* Action buttons */}
           {!loading && !isNotFound && !error && product && (
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setMutationError(null);
-                  setIsEditOpen(true);
-                }}
-                className="px-3.5 py-1.5 text-xs sm:text-sm font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 shadow-sm transition-all flex items-center gap-1.5"
+                onClick={() => { setMutationError(null); setIsEditOpen(true); }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-semibold text-[#0F172A] bg-white border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] hover:border-slate-300 shadow-sm transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               >
-                <svg className="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5 text-[#64748B]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
                 Edit
@@ -194,13 +201,10 @@ export default function ProductDetailPage() {
 
               <button
                 type="button"
-                onClick={() => {
-                  setMutationError(null);
-                  setIsDeleteOpen(true);
-                }}
-                className="px-3.5 py-1.5 text-xs sm:text-sm font-semibold text-red-600 bg-white border border-red-200 rounded-xl hover:bg-red-50 shadow-sm transition-all flex items-center gap-1.5"
+                onClick={() => { setMutationError(null); setIsDeleteOpen(true); }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-semibold text-[#DC2626] bg-white border border-red-100 rounded-lg hover:bg-red-50 hover:border-red-200 shadow-sm transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
               >
-                <svg className="w-3.5 h-3.5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
                 Delete
@@ -279,7 +283,7 @@ export default function ProductDetailPage() {
 
         {/* ── Product Details Display ─────────────────────────────────────── */}
         {!loading && !isNotFound && !error && product && (
-          <div className="space-y-12">
+          <div className="space-y-8">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-12 items-start">
               {/* Left: Image Gallery Component */}
               <ProductGallery
@@ -289,57 +293,50 @@ export default function ProductDetailPage() {
               />
 
               {/* Right: Product Information */}
-              <div className="flex flex-col gap-6">
-                {/* Badges & Meta Top */}
+              <div className="flex flex-col gap-5">
+                {/* Badges */}
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 capitalize">
+                  <Link
+                    href={`/products?category=${encodeURIComponent(product.category)}`}
+                    className="px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 border border-indigo-100 capitalize transition-colors"
+                  >
                     {product.category}
-                  </span>
-
+                  </Link>
                   {product.brand && (
-                    <span className="px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700">
+                    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-[#64748B] border border-[#E2E8F0]">
                       {product.brand}
                     </span>
                   )}
-
                   <DetailStockBadge stock={product.stock} />
                 </div>
 
                 {/* Title */}
-                <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 leading-tight">
+                <h1 className="text-2xl sm:text-3xl font-bold text-[#0F172A] leading-tight tracking-tight">
                   {product.title}
                 </h1>
 
-                {/* Rating Section */}
-                <div className="flex items-center gap-2 text-sm">
-                  <div className="flex items-center text-amber-400">
-                    <span className="text-base">★</span>
-                    <span className="font-bold text-slate-900 ml-1">
-                      {product.rating?.toFixed(1) ?? "—"}
-                    </span>
+                {/* Rating */}
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1">
+                    {[1,2,3,4,5].map((s) => (
+                      <span key={s} className={`text-base ${s <= Math.round(product.rating || 0) ? "text-amber-400" : "text-slate-200"}`}>★</span>
+                    ))}
                   </div>
-                  <span className="text-slate-400">•</span>
-                  <span className="text-slate-500">
-                    {product.reviews?.length ?? 0} reviews
-                  </span>
+                  <span className="text-sm font-bold text-[#0F172A]">{product.rating?.toFixed(1) ?? "—"}</span>
+                  <span className="text-sm text-[#64748B]">{product.reviews?.length ?? 0} reviews</span>
                 </div>
 
-                {/* Pricing Section */}
-                <div className="p-4 rounded-xl bg-slate-100/70 border border-slate-200/60 flex items-baseline gap-3">
-                  <span className="text-3xl font-extrabold text-slate-900">
+                {/* Pricing */}
+                <div className="p-4 rounded-xl bg-white border border-[#E2E8F0] shadow-sm flex items-baseline gap-3">
+                  <span className="text-4xl font-extrabold text-[#0F172A] tabular-nums">
                     ${product.price?.toFixed(2)}
                   </span>
-
                   {product.discountPercentage > 0 && (
                     <>
-                      <span className="text-lg text-slate-400 line-through">
-                        $
-                        {(
-                          product.price /
-                          (1 - product.discountPercentage / 100)
-                        ).toFixed(2)}
+                      <span className="text-base text-[#94A3B8] line-through tabular-nums">
+                        ${(product.price / (1 - product.discountPercentage / 100)).toFixed(2)}
                       </span>
-                      <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 text-xs font-bold">
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-[#16A34A] text-xs font-bold border border-emerald-100">
                         {product.discountPercentage}% OFF
                       </span>
                     </>
@@ -347,17 +344,17 @@ export default function ProductDetailPage() {
                 </div>
 
                 {/* Description */}
-                <div className="space-y-2">
-                  <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">
+                <div className="space-y-1.5">
+                  <h3 className="text-xs font-semibold text-[#64748B] uppercase tracking-widest">
                     Description
                   </h3>
-                  <p className="text-slate-600 text-sm sm:text-base leading-relaxed">
+                  <p className="text-[#64748B] text-sm sm:text-base leading-relaxed">
                     {product.description}
                   </p>
                 </div>
 
-                {/* Specifications & Commerce Details Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-4 border-t border-slate-200">
+                {/* Spec cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-4 border-t border-[#E2E8F0]">
                   <SpecItem label="SKU" value={product.sku || "N/A"} />
                   <SpecItem label="Warranty" value={product.warrantyInformation || "Standard"} />
                   <SpecItem label="Shipping" value={product.shippingInformation || "Available"} />
@@ -403,20 +400,23 @@ export default function ProductDetailPage() {
 function DetailStockBadge({ stock }) {
   if (stock === 0) {
     return (
-      <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 text-[#DC2626] border border-red-100">
+        <span className="w-1.5 h-1.5 rounded-full bg-[#DC2626] inline-block" />
         Out of stock
       </span>
     );
   }
   if (stock <= 10) {
     return (
-      <span className="px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-[#D97706] border border-amber-100">
+        <span className="w-1.5 h-1.5 rounded-full bg-[#D97706] inline-block" />
         Low stock ({stock} left)
       </span>
     );
   }
   return (
-    <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
+    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-[#16A34A] border border-emerald-100">
+      <span className="w-1.5 h-1.5 rounded-full bg-[#16A34A] inline-block" />
       In stock ({stock} left)
     </span>
   );
@@ -424,11 +424,11 @@ function DetailStockBadge({ stock }) {
 
 function SpecItem({ label, value }) {
   return (
-    <div className="p-3 bg-white border border-slate-200 rounded-xl">
-      <span className="block text-xs font-medium text-slate-400 mb-0.5">
+    <div className="p-3 bg-white border border-[#E2E8F0] rounded-xl hover:border-slate-300 transition-colors">
+      <span className="block text-[10px] font-semibold text-[#94A3B8] uppercase tracking-widest mb-1">
         {label}
       </span>
-      <span className="block text-xs font-semibold text-slate-800 truncate">
+      <span className="block text-xs font-semibold text-[#0F172A] truncate">
         {value}
       </span>
     </div>

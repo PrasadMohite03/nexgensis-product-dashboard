@@ -324,14 +324,15 @@ function ProductsContent({ user, onLogout }) {
       // ADD MODE
       const res = await apiCreateProduct(payload);
       if (res) {
+        const thumbUrl = payload.thumbnail || res.thumbnail || "https://placehold.co/150x150?text=New+Product";
         const newProd = {
           id: res.id || Date.now(),
-          thumbnail: "https://placehold.co/150x150?text=New+Product",
-          images: ["https://placehold.co/600x600?text=New+Product"],
           rating: 0,
           reviews: [],
           ...payload,
           ...res,
+          thumbnail: thumbUrl,
+          images: [thumbUrl],
         };
         // Persist into shared context so /products/[id] can render it
         addCreatedProduct(newProd);
@@ -370,10 +371,10 @@ function ProductsContent({ user, onLogout }) {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         {/* Page heading & Add Product Action */}
-        <div className="mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">Products</h1>
-            <p className="text-sm text-gray-500 mt-0.5">
+            <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Products</h1>
+            <p className="text-[13px] text-slate-500 mt-0.5">
               Browse, filter, and manage your product catalogue
             </p>
           </div>
@@ -381,10 +382,10 @@ function ProductsContent({ user, onLogout }) {
           <button
             type="button"
             onClick={handleOpenAdd}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-sm transition-all hover:shadow focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 shrink-0"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#4F46E5] hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-lg text-sm font-semibold shadow-sm transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4F46E5] focus-visible:ring-offset-2 shrink-0"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
             </svg>
             Add Product
           </button>
@@ -406,17 +407,21 @@ function ProductsContent({ user, onLogout }) {
 
         {/* Active filter label feedback */}
         {(search || category) && (
-          <div className="mb-4 text-sm text-slate-500">
+          <div className="mb-4 flex items-center gap-2 text-sm">
             {search && (
-              <span>
-                Search results for{" "}
-                <span className="font-semibold text-indigo-600">&ldquo;{search}&rdquo;</span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 font-medium text-xs border border-indigo-100">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                &ldquo;{search}&rdquo;
               </span>
             )}
             {category && (
-              <span>
-                Showing category{" "}
-                <span className="font-semibold text-indigo-600">&ldquo;{category}&rdquo;</span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 font-medium text-xs border border-indigo-100 capitalize">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                </svg>
+                {category}
               </span>
             )}
           </div>
@@ -523,7 +528,7 @@ function ProductsContent({ user, onLogout }) {
               onEdit={handleOpenEdit}
               onDelete={handleOpenDelete}
             />
-            <div className="mt-4 bg-white rounded-xl border border-gray-200 px-4">
+            <div className="mt-4 bg-white rounded-xl border border-slate-200/80 p-3 sm:px-4 shadow-xs">
               <Pagination
                 currentPage={page}
                 totalPages={totalPages}
